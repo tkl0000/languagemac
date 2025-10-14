@@ -1,5 +1,6 @@
 "use client";
 import { useState } from "react";
+import queryDatabase from "../api/query";
 
 interface characterResult {
     character: string,
@@ -7,14 +8,10 @@ interface characterResult {
     definition: string,
 }
 
-const Settings = () => {
+const Settings = async () => {
 
     const [searchingPinyin, setSearchingPinyin] = useState<String>();
     const [characterResults, setCharacterResults] = useState<characterResult[]>();
-
-    const queryDatabase = (query: string) => {
-
-    }
 
     const onSearchChange = (query: string) => {
         setSearchingPinyin(query)

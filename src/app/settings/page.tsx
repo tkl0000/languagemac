@@ -1,4 +1,28 @@
+"use client";
+import { useState } from "react";
+
+interface characterResult {
+    character: string,
+    pinyin: string,
+    definition: string,
+}
+
 const Settings = () => {
+
+    const [searchingPinyin, setSearchingPinyin] = useState<String>();
+    const [characterResults, setCharacterResults] = useState<characterResult[]>();
+
+    const queryDatabase = (query: string) => {
+
+    }
+
+    const onSearchChange = (query: string) => {
+        setSearchingPinyin(query)
+        if (query.length > 0) {
+            queryDatabase(query)
+        }
+    }
+
     return (
         // <div className="flex flex-col justify-center items-center h-screen">
         //     <div className="text-xl">
@@ -12,8 +36,12 @@ const Settings = () => {
                     type="text"
                     placeholder="Search words..."
                     className="p-2"
+                    onChange={(e) => { onSearchChange(e.target.value) }}
                 // className="w-full rounded-md border border-gray-300 px-3 py-2 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none"
                 />
+                <div>
+                    Searching: {searchingPinyin}
+                </div>
             </div>
             <div className="m-4 text-xl flex flex-col">
                 <h1 className="bg-gray-800 p-2">Current Words</h1>

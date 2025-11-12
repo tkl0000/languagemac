@@ -1,12 +1,10 @@
-const Play = () => {
+import PlayClient from './PlayClient'
+
+const Page = async () => {
     return (
-        <div className="flex flex-col justify-center items-center h-screen">
-            <div className="text-xl">
-                <h1>LanguageMac</h1>
-                <button>Start</button>
-            </div>
-        </div>
+        <PlayClient />
     )
 }
 
-export default Play
+export default Page
+

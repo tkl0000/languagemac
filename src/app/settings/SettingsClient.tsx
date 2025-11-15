@@ -1,5 +1,7 @@
 "use client";
 import { useState, useEffect } from "react";
+import { createClient } from "../utils/supabase/client";
+import { useRouter } from "next/navigation";
 
 interface characterResult {
     character: string,
@@ -34,38 +36,62 @@ const deleteCookie = (name: string) => {
 };
 
 const SettingsClient = () => {
-
+    const supabase = createClient();
+    const router = useRouter();
     const [searchingPinyin, setSearchingPinyin] = useState<string>("");
     const [characterResults, setCharacterResults] = useState<characterResult[]>([]);
     const [isLoading, setIsLoading] = useState(false);
     const [addedWords, setAddedWords] = useState<characterResult[]>([]);
-    const [hasLoadedFromCookie, setHasLoadedFromCookie] = useState(false);
+    const [hasLoaded, setHasLoaded] = useState(false);
+    const [isLoggedIn, setIsLoggedIn] = useState(false);
+    const [userEmail, setUserEmail] = useState<string | null>(null);
 
-    // Load added words from cookies on mount
+    // Check auth status and load cards
     useEffect(() => {
-        const savedWords = getCookie(COOKIE_NAME);
-        if (savedWords) {
-            try {
-                const parsed = JSON.parse(savedWords) as characterResult[];
-                setAddedWords(parsed);
-            } catch (error) {
-                console.error("Error parsing saved words from cookie:", error);
+        const loadData = async () => {
+            const { data: { user } } = await supabase.auth.getUser();
+            
+            if (user) {
+                setIsLoggedIn(true);
+                setUserEmail(user.email || null);
+                // Load from database
+                try {
+                    const response = await fetch("/api/cards");
+                    if (response.ok) {
+                        const data = await response.json();
+                        setAddedWords(data.items || []);
+                    }
+                } catch (error) {
+                    console.error("Error loading cards from database:", error);
+                }
+            } else {
+                setIsLoggedIn(false);
+                // Load from cookies
+                const savedWords = getCookie(COOKIE_NAME);
+                if (savedWords) {
+                    try {
+                        const parsed = JSON.parse(savedWords) as characterResult[];
+                        setAddedWords(parsed);
+                    } catch (error) {
+                        console.error("Error parsing saved words from cookie:", error);
+                    }
+                }
             }
-        }
-        setHasLoadedFromCookie(true);
-    }, []);
+            setHasLoaded(true);
+        };
+        loadData();
+    }, [supabase]);
 
-    // Save added words to cookies whenever they change (but only after initial load)
+    // Save to cookies when not logged in (but only after initial load)
     useEffect(() => {
-        if (!hasLoadedFromCookie) return;
+        if (!hasLoaded || isLoggedIn) return;
 
         if (addedWords.length > 0) {
             setCookie(COOKIE_NAME, JSON.stringify(addedWords));
         } else {
-            // Delete cookie if list is empty
             deleteCookie(COOKIE_NAME);
         }
-    }, [addedWords, hasLoadedFromCookie]);
+    }, [addedWords, hasLoaded, isLoggedIn]);
 
     useEffect(() => {
         const searchCharacters = async () => {
@@ -105,15 +131,61 @@ const SettingsClient = () => {
         setSearchingPinyin(query);
     }
 
-    const addWord = (word: characterResult) => {
+    const addWord = async (word: characterResult) => {
         // Check if word is already added (by character)
-        if (!addedWords.some(w => w.character === word.character)) {
+        if (addedWords.some(w => w.character === word.character)) {
+            return;
+        }
+
+        if (isLoggedIn) {
+            // Save to database
+            try {
+                const response = await fetch("/api/cards", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(word),
+                });
+                if (response.ok) {
+                    setAddedWords([...addedWords, word]);
+                } else {
+                    const error = await response.json();
+                    console.error("Error adding card:", error);
+                }
+            } catch (error) {
+                console.error("Error adding card:", error);
+            }
+        } else {
+            // Save to local state (will be saved to cookie via useEffect)
             setAddedWords([...addedWords, word]);
         }
     }
 
-    const removeWord = (word: characterResult) => {
-        setAddedWords(addedWords.filter(w => w.character !== word.character));
+    const removeWord = async (word: characterResult) => {
+        if (isLoggedIn) {
+            // Delete from database
+            try {
+                const response = await fetch(`/api/cards?character=${encodeURIComponent(word.character)}`, {
+                    method: "DELETE",
+                });
+                if (response.ok) {
+                    setAddedWords(addedWords.filter(w => w.character !== word.character));
+                } else {
+                    const error = await response.json();
+                    console.error("Error removing card:", error);
+                }
+            } catch (error) {
+                console.error("Error removing card:", error);
+            }
+        } else {
+            // Remove from local state (will update cookie via useEffect)
+            setAddedWords(addedWords.filter(w => w.character !== word.character));
+        }
+    }
+
+    const handleLogout = async () => {
+        await supabase.auth.signOut();
+        router.push("/");
+        router.refresh();
     }
 
     const toggleWord = (word: characterResult) => {
@@ -133,7 +205,29 @@ const SettingsClient = () => {
         // </div>
         <div className="grid grid-cols-2 h-screen bg-gradient-to-br from-gray-950 via-gray-900 to-gray-950 overflow-hidden">
             <div className="m-4 text-xl flex flex-col gap-4 h-full min-h-0">
-                <h1 className="bg-gradient-to-r from-gray-800 to-gray-700 p-3 rounded-lg text-white font-semibold border border-gray-600/50 shadow-lg flex-shrink-0">Add Words</h1>
+                <div className="flex items-center justify-between flex-shrink-0">
+                    <h1 className="bg-gradient-to-r from-gray-800 to-gray-700 p-3 rounded-lg text-white font-semibold border border-gray-600/50 shadow-lg">Add Words</h1>
+                    <div className="flex items-center gap-2">
+                        {isLoggedIn ? (
+                            <>
+                                <span className="text-sm text-gray-400">{userEmail}</span>
+                                <button
+                                    onClick={handleLogout}
+                                    className="px-3 py-1.5 text-sm rounded-lg bg-gray-700/50 text-gray-300 hover:bg-gray-700 border border-gray-600/50 transition-all duration-300"
+                                >
+                                    Logout
+                                </button>
+                            </>
+                        ) : (
+                            <a
+                                href="/auth"
+                                className="px-3 py-1.5 text-sm rounded-lg bg-gradient-to-r from-cyan-500 to-cyan-600 text-white hover:from-cyan-400 hover:to-cyan-500 transition-all duration-300"
+                            >
+                                Login
+                            </a>
+                        )}
+                    </div>
+                </div>
                 <input
                     type="text"
                     placeholder="Search words..."
@@ -200,7 +294,14 @@ const SettingsClient = () => {
                 )}
             </div>
             <div className="m-4 text-xl flex flex-col gap-4 h-full min-h-0">
-                <h1 className="bg-gradient-to-r from-gray-800 to-gray-700 p-3 rounded-lg text-white font-semibold border border-gray-600/50 shadow-lg flex-shrink-0">Added Words ({addedWords.length})</h1>
+                <div className="flex items-center justify-between flex-shrink-0">
+                    <h1 className="bg-gradient-to-r from-gray-800 to-gray-700 p-3 rounded-lg text-white font-semibold border border-gray-600/50 shadow-lg">Added Words ({addedWords.length})</h1>
+                    {!isLoggedIn && (
+                        <div className="text-xs text-yellow-400 bg-yellow-500/20 border border-yellow-500/50 px-3 py-1.5 rounded-lg">
+                            Not saved - <a href="/auth" className="underline">Login to save</a>
+                        </div>
+                    )}
+                </div>
                 {addedWords.length > 0 ? (
                     <div className="flex flex-col flex-1 min-h-0 space-y-2">
                         <div className="flex-1 overflow-y-auto space-y-3 py-5 min-h-0 mb-5">

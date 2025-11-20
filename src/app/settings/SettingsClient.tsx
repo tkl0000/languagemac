@@ -257,8 +257,8 @@ const SettingsClient = () => {
 
                                         {/* Content */}
                                         <div className="relative z-10">
-                                            <div className="text-2xl font-bold text-white mb-1 tracking-wide">{result.character}</div>
-                                            <div className="text-sm font-medium text-cyan-400 mb-2 uppercase tracking-wider">{result.pinyin}</div>
+                                            <div className="text-2xl font-bold text-white mb-1 tracking-wide chinese-char">{result.character}</div>
+                                            <div className="text-sm font-medium text-cyan-400 mb-2 tracking-wider pinyin-text">{result.pinyin}</div>
                                             <div className="text-sm text-gray-300 leading-relaxed">{result.definition}</div>
                                         </div>
 
@@ -317,8 +317,8 @@ const SettingsClient = () => {
 
                                     {/* Content */}
                                     <div className="relative z-10">
-                                        <div className="text-2xl font-bold text-white mb-1 tracking-wide">{word.character}</div>
-                                        <div className="text-sm font-medium text-green-400 mb-2 uppercase tracking-wider">{word.pinyin}</div>
+                                        <div className="text-2xl font-bold text-white mb-1 tracking-wide chinese-char">{word.character}</div>
+                                        <div className="text-sm font-medium text-green-400 mb-2 tracking-wider pinyin-text">{word.pinyin}</div>
                                         <div className="text-sm text-gray-300 leading-relaxed">{word.definition}</div>
                                     </div>
 

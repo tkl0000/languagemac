@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { createClient } from "./utils/supabase/client";
 import { useRouter } from "next/navigation";
 
@@ -10,6 +10,16 @@ interface characterResult {
 }
 
 const COOKIE_NAME = "addedWords";
+
+// Shuffle array using Fisher-Yates algorithm
+const shuffleArray = <T,>(array: T[]): T[] => {
+    const shuffled = [...array];
+    for (let i = shuffled.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+    }
+    return shuffled;
+};
 
 // Remove tones from pinyin (convert tone marks to base letters)
 const removeTones = (pinyin: string): string => {
@@ -58,14 +68,19 @@ const MainClient = () => {
     const [gameOver, setGameOver] = useState(false);
     const inputRef = useRef<HTMLInputElement>(null);
     const isCheckingRef = useRef(false);
+    const currentCardIndexRef = useRef(0);
+    const shuffledCardsRef = useRef<characterResult[]>([]);
     const [isProcessing, setIsProcessing] = useState(false);
     const [isLoggedIn, setIsLoggedIn] = useState(false);
+    const [showSkippedInfo, setShowSkippedInfo] = useState(false);
+    const [shuffledCards, setShuffledCards] = useState<characterResult[]>([]);
+    const [currentCardIndex, setCurrentCardIndex] = useState(0);
 
     // Load added words from database or cookies on mount
     useEffect(() => {
         const loadData = async () => {
             const { data: { user } } = await supabase.auth.getUser();
-            
+
             if (user) {
                 setIsLoggedIn(true);
                 // Load from database
@@ -118,6 +133,27 @@ const MainClient = () => {
         return () => clearInterval(timer);
     }, [gameStarted, gameOver, timeRemaining]);
 
+    // Get next card from shuffled permutation
+    const getNextCard = useCallback(() => {
+        if (shuffledCardsRef.current.length === 0) return null;
+        
+        let nextIndex = currentCardIndexRef.current + 1;
+        let cardsToUse = shuffledCardsRef.current;
+        
+        // If we've gone through all cards, reshuffle and start over
+        if (nextIndex >= shuffledCardsRef.current.length) {
+            const reshuffled = shuffleArray(addedWords);
+            shuffledCardsRef.current = reshuffled;
+            setShuffledCards(reshuffled);
+            cardsToUse = reshuffled;
+            nextIndex = 0;
+        }
+        
+        currentCardIndexRef.current = nextIndex;
+        setCurrentCardIndex(nextIndex);
+        return cardsToUse[nextIndex];
+    }, [addedWords]);
+
     // Auto-check answer when user types
     useEffect(() => {
         if (!gameStarted || gameOver || !currentWord || isCheckingRef.current) return;
@@ -138,9 +174,9 @@ const MainClient = () => {
 
             // Advance immediately
             setTimeout(() => {
-                if (addedWords.length > 0) {
-                    const randomIndex = Math.floor(Math.random() * addedWords.length);
-                    setCurrentWord(addedWords[randomIndex]);
+                const nextCard = getNextCard();
+                if (nextCard) {
+                    setCurrentWord(nextCard);
                 }
                 setUserInput("");
                 isCheckingRef.current = false;
@@ -151,14 +187,7 @@ const MainClient = () => {
                 }, 50);
             }, 100);
         }
-    }, [userInput, currentWord, gameStarted, gameOver, addedWords]);
-
-    // Get random word
-    const getRandomWord = () => {
-        if (addedWords.length === 0) return null;
-        const randomIndex = Math.floor(Math.random() * addedWords.length);
-        return addedWords[randomIndex];
-    };
+    }, [userInput, currentWord, gameStarted, gameOver, getNextCard]);
 
     // Start game
     const startGame = () => {
@@ -166,12 +195,19 @@ const MainClient = () => {
             alert("Please add some words in Settings first!");
             return;
         }
+        // Create shuffled permutation of cards
+        const shuffled = shuffleArray(addedWords);
+        shuffledCardsRef.current = shuffled;
+        currentCardIndexRef.current = 0;
+        setShuffledCards(shuffled);
+        setCurrentCardIndex(0);
         setGameStarted(true);
         setGameOver(false);
         setScore({ correct: 0 });
         setTimeRemaining(60);
-        setCurrentWord(getRandomWord());
+        setCurrentWord(shuffled[0]);
         setUserInput("");
+        setShowSkippedInfo(false);
         setTimeout(() => inputRef.current?.focus(), 100);
     };
 
@@ -183,6 +219,36 @@ const MainClient = () => {
         setUserInput("");
         setScore({ correct: 0 });
         setTimeRemaining(60);
+        setShowSkippedInfo(false);
+        shuffledCardsRef.current = [];
+        currentCardIndexRef.current = 0;
+        setShuffledCards([]);
+        setCurrentCardIndex(0);
+    };
+
+    // Handle skip card
+    const handleSkip = () => {
+        if (!currentWord || isProcessing) return;
+        
+        isCheckingRef.current = true;
+        setIsProcessing(true);
+        setShowSkippedInfo(true);
+        
+        // Show definition for 2 seconds, then advance
+        setTimeout(() => {
+            const nextCard = getNextCard();
+            if (nextCard) {
+                setCurrentWord(nextCard);
+            }
+            setUserInput("");
+            setShowSkippedInfo(false);
+            isCheckingRef.current = false;
+            setIsProcessing(false);
+            // Small delay before focusing to ensure input is cleared
+            setTimeout(() => {
+                inputRef.current?.focus();
+            }, 50);
+        }, 2000);
     };
 
 
@@ -267,15 +333,15 @@ const MainClient = () => {
                     <h1 className="text-4xl font-bold text-white mb-2 text-center">Game Over!</h1>
 
                     <div className="bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 border border-gray-700/50 rounded-lg p-8 space-y-6">
-                        <div className="grid grid-cols-2 gap-4">
+                        <div className="grid  gap-4">
                             <div className="text-center p-4 bg-cyan-500/20 border border-cyan-500/50 rounded-lg">
                                 <div className="text-3xl font-bold text-cyan-400">{score.correct}</div>
                                 <div className="text-sm text-gray-300 mt-1">Correct</div>
                             </div>
-                            <div className="text-center p-4 bg-purple-500/20 border border-purple-500/50 rounded-lg">
+                            {/* <div className="text-center p-4 bg-purple-500/20 border border-purple-500/50 rounded-lg">
                                 <div className="text-3xl font-bold text-purple-400">{wordsPerMinute}</div>
                                 <div className="text-sm text-gray-300 mt-1">Words per Minute</div>
-                            </div>
+                            </div> */}
                         </div>
                         <div className="flex gap-4">
                             <button
@@ -316,12 +382,19 @@ const MainClient = () => {
                 <div className="bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 border border-gray-700/50 rounded-lg p-12 text-center space-y-8">
                     {/* Character Display */}
                     <div className="space-y-4">
-                        <div className="text-8xl font-bold text-white mb-4 tracking-wide">
+                        <div className="text-8xl font-bold text-white mb-4 tracking-wide chinese-char">
                             {currentWord?.character}
                         </div>
-                        <div className="text-sm text-gray-400">
-                            {currentWord?.definition}
-                        </div>
+                        {showSkippedInfo && currentWord && (
+                            <div className="space-y-2 animate-fade-in">
+                                <div className="text-xl font-medium text-cyan-400 tracking-wider pinyin-text">
+                                    {currentWord.pinyin}
+                                </div>
+                                <div className="text-sm text-gray-300">
+                                    {currentWord.definition}
+                                </div>
+                            </div>
+                        )}
                     </div>
 
                     {/* Input */}
@@ -340,6 +413,13 @@ const MainClient = () => {
                             autoComplete="off"
                             disabled={isProcessing}
                         />
+                        <button
+                            onClick={handleSkip}
+                            disabled={isProcessing}
+                            className="px-6 py-2 rounded-lg font-medium bg-gray-700/50 text-gray-300 hover:bg-gray-700 border border-gray-600/50 transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                            Skip
+                        </button>
                     </div>
                 </div>
             </div>
